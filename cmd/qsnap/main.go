@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"github.com/maxischmaxi/qsnap/internal/browser"
@@ -22,6 +23,7 @@ import (
 )
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU())
 	var (
 		input       = flag.String("input", ".", "the storybook directory you want to run snapshot tests in")
 		concurrency = flag.Int("concurrency", 10, "number of concurrent screenshot tasks")
