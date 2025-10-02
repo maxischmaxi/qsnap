@@ -19,7 +19,6 @@ import (
 	"github.com/maxischmaxi/qsnap/internal/snapshot"
 	"github.com/maxischmaxi/qsnap/internal/storybook"
 	"github.com/maxischmaxi/qsnap/internal/tools"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -54,29 +53,29 @@ func main() {
 
 	baseDir, err := tools.ExpandPath(*input)
 	if err != nil {
-		log.Fatal("failed to expand input path", zap.String("input", *input), zap.Error(err))
+		log.Fatal(err)
 	}
 
 	cfg, err := config.NewOsnapBaseConfig(filepath.Join(baseDir, *baseConfig))
 	if err != nil {
-		log.Fatal("failed to load base config", zap.String("file", *baseConfig), zap.Error(err))
+		log.Fatal(err)
 	}
 
 	configs, err := cfg.FindAndParseConfigs(*input)
 	if err != nil {
-		log.Fatal("failed to find/parse config files", zap.String("input", *input), zap.Error(err))
+		log.Fatal(err)
 	}
 
 	err = os.MkdirAll(cfg.SnapshotDirectory, 0o755)
 	if err != nil {
-		log.Fatal("failed to create snapshot directory", zap.String("dir", cfg.SnapshotDirectory), zap.Error(err))
+		log.Fatal(err)
 	}
 
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 
 	if err := storybook.BuildIfNeeded(rootCtx, *sbBuildCmd, filepath.Join(baseDir, *sbBuildDir), baseDir, *sbForce); err != nil {
-		log.Fatal("failed to build storybook", zap.Error(err))
+		log.Fatal(err)
 	}
 
 	ctrl, started, err := storybook.ServeBuildIfNeeded(
@@ -88,7 +87,7 @@ func main() {
 		"",
 	)
 	if err != nil {
-		log.Fatal("failed to serve storybook", zap.Error(err))
+		log.Fatal(err)
 	}
 	defer func() {
 		if ctrl != nil {
@@ -106,7 +105,7 @@ func main() {
 
 	brs, err := browser.LaunchPool(rootCtx, instancesClamped, chromeArgsList)
 	if err != nil {
-		log.Fatal("failed to launch browser instances", zap.Error(err))
+		log.Fatal(err)
 	}
 	defer brs.CloseAll()
 
@@ -207,7 +206,7 @@ func main() {
 	reportPath := filepath.Join(baseDir, "report.json")
 	err = report.Write(reportPath, rep)
 	if err != nil {
-		log.Fatal("failed to write report", zap.String("file", reportPath), zap.Error(err))
+		log.Fatal(err)
 	}
 	log.Println("wrote report to", reportPath)
 }
