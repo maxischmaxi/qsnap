@@ -49,13 +49,13 @@ func (is Instances) PickIdx() (*Instance, int) {
 	return is[rand.Intn(len(is))], is[0].ID
 }
 
-func LaunchPool(root context.Context, n int) (Instances, error) {
+func LaunchPool(root context.Context, n int, chromeArgs []string) (Instances, error) {
 	if n < 1 {
 		n = 1
 	}
 	instances := make([]*Instance, 0, n)
 	for i := 0; i < n; i++ {
-		inst, err := launchOne(root, false)
+		inst, err := launchOne(root, chromeArgs)
 		if err != nil {
 			// alle bereits gestarteten wieder schließen
 			for _, it := range instances {
@@ -77,10 +77,10 @@ func LaunchPool(root context.Context, n int) (Instances, error) {
 	return instances, nil
 }
 
-func launchOne(root context.Context, devtools bool) (*Instance, error) {
+func launchOne(root context.Context, chromeArgs []string) (*Instance, error) {
 	opts := chromedp.DefaultExecAllocatorOptions[:]
 	opts = append(opts,
-		chromedp.Flag("headless", !devtools),
+		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("no-first-run", true),
 		chromedp.Flag("no-default-browser-check", true),
@@ -93,6 +93,14 @@ func launchOne(root context.Context, devtools bool) (*Instance, error) {
 		chromedp.Flag("hide-scrollbars", true),
 		chromedp.Flag("mute-audio", true),
 	)
+
+	for _, a := range chromeArgs {
+		if a == "" {
+			continue
+		}
+
+		opts = append(opts, chromedp.Flag(a, true))
+	}
 
 	// Optional: eigenen Binary pflegen
 	if bin := os.Getenv("CHROME_BIN"); bin != "" {

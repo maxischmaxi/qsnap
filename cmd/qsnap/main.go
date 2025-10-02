@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/maxischmaxi/qsnap/internal/browser"
@@ -41,6 +42,8 @@ func main() {
 		logJSON     = flag.Bool("logJSON", false, "if true, log in JSON format")
 		logConsole  = flag.Bool("logConsole", true, "if true, log to console")
 		logDev      = flag.Bool("logDev", false, "if true, use a more human friendly console log format")
+		chromeArgs  = flag.String("chromeArgs", "", "additional comma-separated arguments to pass to Chrome instances")
+		limit       = flag.Int("limit", 0, "if > 0, only process this many stories from the config files")
 	)
 
 	flag.Parse()
@@ -79,6 +82,14 @@ func main() {
 		zap.Bool("logConsole", *logConsole),
 		zap.Bool("logDev", *logDev),
 	)
+
+	chromeArgsList := []string{}
+	if *chromeArgs != "" {
+		chromeArgsList = strings.Split(*chromeArgs, ",")
+	}
+	if len(chromeArgsList) > 0 {
+		logging.L.Info("additional chrome arguments", zap.Strings("args", chromeArgsList))
+	}
 
 	baseDir, err := tools.ExpandPath(*input)
 	if err != nil {
@@ -142,7 +153,7 @@ func main() {
 
 	instancesClamped := max(*instances, 1)
 
-	brs, err := browser.LaunchPool(rootCtx, instancesClamped)
+	brs, err := browser.LaunchPool(rootCtx, instancesClamped, chromeArgsList)
 	if err != nil {
 		logging.L.Fatal("failed to launch browser instances", zap.Error(err))
 		os.Exit(1)
@@ -156,7 +167,13 @@ func main() {
 	sendUI, stopUI := ui.Run(rootCtx, len(configs))
 	defer stopUI()
 
-	for i, s := range configs {
+	configsToProcess := configs
+	if *limit > 0 && *limit < len(configs) {
+		configsToProcess = configs[:*limit]
+		logging.L.Info("limiting number of stories to process", zap.Int("limit", *limit))
+	}
+
+	for i, s := range configsToProcess {
 		i, s := i, s // capture loop variables
 
 		wp.Go(func() {
