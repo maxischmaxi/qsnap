@@ -9,9 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/maxischmaxi/qsnap/internal/logging"
 	"github.com/maxischmaxi/qsnap/internal/tools"
-	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,7 +47,6 @@ func (s *Sizes) UnmarshalYAML(unmarshal func(any) error) error {
 		return nil
 	}
 
-	logging.L.Error("failed to unmarshal Sizes", zap.Error(errors.New("unsupported format")))
 	return fmt.Errorf("unsupported format for sizes: expected []string, Size, or []Size")
 }
 
@@ -103,18 +100,15 @@ func NewOsnapBaseConfig(baseConfigPath string) (*OsnapBaseConfig, error) {
 
 	path, err := tools.ExpandPath(baseConfigPath)
 	if err != nil {
-		logging.L.Error("failed to expand base config path", zap.String("path", baseConfigPath), zap.Error(err))
 		return nil, err
 	}
 
 	if !tools.FileExists(path) {
-		logging.L.Error("base config file does not exist", zap.String("path", path))
 		return nil, fmt.Errorf("base config file does not exist: %s", path)
 	}
 
 	f, err := os.Open(path)
 	if err != nil {
-		logging.L.Error("failed to open base config file", zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 	defer f.Close()
@@ -126,57 +120,47 @@ func NewOsnapBaseConfig(baseConfigPath string) (*OsnapBaseConfig, error) {
 		if errors.Is(err, io.EOF) {
 			return config, nil
 		}
-		logging.L.Error("failed to decode base config file", zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 
 	if err := tools.EnsureEOF(dec); err != nil {
-		logging.L.Error("failed to ensure EOF for base config file", zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 
 	config.SnapshotDirectory, err = tools.ExpandPath(config.SnapshotDirectory)
 	if err != nil {
-		logging.L.Error("failed to expand snapshot directory path", zap.String("path", config.SnapshotDirectory), zap.Error(err))
 		return nil, err
 	}
 
 	if len(config.DefaultSizes) == 0 {
-		logging.L.Error("no default sizes specified in base config")
 		return nil, fmt.Errorf("at least one default size must be specified")
 	}
 
 	for i, s := range config.DefaultSizes {
 		if s.Width <= 0 || s.Height <= 0 {
-			logging.L.Error("invalid default size in base config", zap.Int("index", i), zap.Int("width", s.Width), zap.Int("height", s.Height))
 			return nil, fmt.Errorf("invalid default size at index %d: width and height must be positive integers", i)
 		}
 	}
 
 	if config.Threshold < 0 || config.Threshold > 100 {
-		logging.L.Error("invalid threshold in base config", zap.Int("threshold", config.Threshold))
 		return nil, fmt.Errorf("threshold must be between 0 and 100")
 	}
 
 	if config.Retry < 0 {
-		logging.L.Error("invalid retry count in base config", zap.Int("retry", config.Retry))
 		return nil, fmt.Errorf("retry must be non-negative")
 	}
 
 	if config.TestPattern == "" {
-		logging.L.Error("no test pattern specified in base config")
 		return nil, fmt.Errorf("testPattern must be specified")
 	}
 
 	if config.SnapshotDirectory == "" {
-		logging.L.Error("no snapshot directory specified in base config")
 		return nil, fmt.Errorf("snapshotDirectory must be specified")
 	}
 
 	if config.DiffPixelColor.R < 0 || config.DiffPixelColor.R > 255 ||
 		config.DiffPixelColor.G < 0 || config.DiffPixelColor.G > 255 ||
 		config.DiffPixelColor.B < 0 || config.DiffPixelColor.B > 255 {
-		logging.L.Error("invalid diffPixelColor values in base config", zap.Int("r", config.DiffPixelColor.R), zap.Int("g", config.DiffPixelColor.G), zap.Int("b", config.DiffPixelColor.B))
 		return nil, fmt.Errorf("diffPixelColor values must be between 0 and 255")
 	}
 
@@ -187,7 +171,6 @@ func (cfg *OsnapBaseConfig) NewOsnapConfig(configPath string) ([]*OsnapConfig, e
 	var configs []*OsnapConfig
 
 	if !tools.FileExists(configPath) {
-		logging.L.Error("config file does not exist", zap.String("path", configPath))
 		return nil, fmt.Errorf("config file does not exist: %s", configPath)
 	}
 
@@ -204,12 +187,10 @@ func (cfg *OsnapBaseConfig) NewOsnapConfig(configPath string) ([]*OsnapConfig, e
 		if errors.Is(err, io.EOF) {
 			return configs, nil
 		}
-		logging.L.Error("failed to decode config file", zap.String("path", configPath), zap.Error(err))
 		return nil, err
 	}
 
 	if err := tools.EnsureEOF(dec); err != nil {
-		logging.L.Error("failed to ensure EOF for config file", zap.String("path", configPath), zap.Error(err))
 		return nil, err
 	}
 

@@ -1,6 +1,7 @@
 package diff
 
 import (
+	"bytes"
 	"errors"
 	"image"
 	"image/color"
@@ -10,9 +11,7 @@ import (
 	"os"
 
 	"github.com/corona10/goimagehash"
-	"github.com/maxischmaxi/qsnap/internal/logging"
 	"github.com/nfnt/resize"
-	"go.uber.org/zap"
 )
 
 type PixelResult struct {
@@ -29,13 +28,11 @@ type PHashResult struct {
 func openPNG(path string) (image.Image, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		logging.L.Error("failed to open PNG", zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 	defer f.Close()
 	img, err := png.Decode(f)
 	if err != nil {
-		logging.L.Error("failed to decode PNG", zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 	return img, nil
@@ -44,7 +41,6 @@ func openPNG(path string) (image.Image, error) {
 func savePNG(path string, img image.Image) error {
 	f, err := os.Create(path)
 	if err != nil {
-		logging.L.Error("failed to create PNG", zap.String("path", path), zap.Error(err))
 		return err
 	}
 	defer f.Close()
@@ -60,7 +56,6 @@ func pixelDiff(a, b image.Image, threshold float64) (PixelResult, image.Image, e
 		bb = b.Bounds()
 	}
 	if ab.Dx() != bb.Dx() || ab.Dy() != bb.Dy() {
-		logging.L.Error("size mismatch after resize", zap.Int("aWidth", ab.Dx()), zap.Int("aHeight", ab.Dy()), zap.Int("bWidth", bb.Dx()), zap.Int("bHeight", bb.Dy()))
 		return PixelResult{}, nil, errors.New("size mismatch after resize")
 	}
 
@@ -84,8 +79,6 @@ func pixelDiff(a, b image.Image, threshold float64) (PixelResult, image.Image, e
 	total := w * h
 	ratio := float64(diffCount) / float64(total)
 
-	logging.L.Debug("pixel diff computed", zap.Int("width", w), zap.Int("height", h), zap.Int("diffCount", diffCount), zap.Float64("ratio", ratio), zap.Float64("threshold", threshold))
-
 	return PixelResult{
 		Pass:      ratio <= threshold,
 		RatioDiff: ratio,
@@ -99,68 +92,51 @@ func pHashDistance(a, b image.Image, allowed int) (PHashResult, error) {
 
 	ha, err := goimagehash.PerceptionHash(aSmall)
 	if err != nil {
-		logging.L.Error("failed to compute pHash for image A", zap.Error(err))
 		return PHashResult{}, err
 	}
 	hb, err := goimagehash.PerceptionHash(bSmall)
 	if err != nil {
-		logging.L.Error("failed to compute pHash for image B", zap.Error(err))
 		return PHashResult{}, err
 	}
 
 	hd, err := ha.Distance(hb)
 	if err != nil {
-		logging.L.Error("failed to compute pHash distance", zap.Error(err))
 		return PHashResult{}, err
 	}
 
-	logging.L.Debug("pHash distance computed", zap.Int("hammingDistance", hd), zap.Int("allowed", allowed))
 	return PHashResult{
 		Pass:            hd <= allowed,
 		HammingDistance: hd,
 	}, nil
 }
 
-func CompareFiles(baselinePath, outPath string, pxThreshold float64, phThreshold int) (PixelResult, PHashResult, error) {
-	logging.L.Info("comparing images", zap.String("baseline", baselinePath), zap.String("output", outPath), zap.Float64("pixelThreshold", pxThreshold), zap.Int("pHashThreshold", phThreshold))
-
+func CompareFiles(baselinePath string, buf []byte, diffPath string, pxThreshold float64, phThreshold int) (PixelResult, PHashResult, error) {
 	baseImg, err := openPNG(baselinePath)
 	if err != nil {
-		logging.L.Error("failed to open baseline image", zap.String("path", baselinePath), zap.Error(err))
-		return PixelResult{}, PHashResult{}, err
-	}
-	outImg, err := openPNG(outPath)
-	if err != nil {
-		logging.L.Error("failed to open output image", zap.String("path", outPath), zap.Error(err))
 		return PixelResult{}, PHashResult{}, err
 	}
 
-	px, diffImg, err := pixelDiff(baseImg, outImg, math.Max(0, pxThreshold))
+	reader := bytes.NewReader(buf)
+	img, err := png.Decode(reader)
 	if err != nil {
-		logging.L.Error("failed to compute pixel diff", zap.String("baseline", baselinePath), zap.String("output", outPath), zap.Error(err))
+		return PixelResult{}, PHashResult{}, err
+	}
+
+	px, diffImg, err := pixelDiff(baseImg, img, math.Max(0, pxThreshold))
+	if err != nil {
 		return PixelResult{}, PHashResult{}, err
 	}
 
 	var ph PHashResult
-	ph, err = pHashDistance(baseImg, outImg, phThreshold)
+	ph, err = pHashDistance(baseImg, img, phThreshold)
 	if err != nil {
-		logging.L.Error("failed to compute pHash diff", zap.String("baseline", baselinePath), zap.String("output", outPath), zap.Error(err))
 		return PixelResult{}, PHashResult{}, err
 	}
 
 	if !px.Pass {
-		_ = savePNG(outPath+".diff.png", diffImg)
-		px.DiffImagePath = outPath + ".diff.png"
+		_ = savePNG(diffPath, diffImg)
+		px.DiffImagePath = diffPath
 	}
 
-	logging.L.Info("diff result",
-		zap.String("baseline", baselinePath),
-		zap.String("output", outPath),
-		zap.Float64("pixelDiffRatio", px.RatioDiff),
-		zap.Bool("pixelDiffPass", px.Pass),
-		zap.String("pixelDiffImage", px.DiffImagePath),
-		zap.Int("pHashHammingDistance", ph.HammingDistance),
-		zap.Bool("pHashPass", ph.Pass),
-	)
 	return px, ph, nil
 }

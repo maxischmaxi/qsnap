@@ -10,9 +10,7 @@ import (
 	"runtime"
 
 	"github.com/chromedp/chromedp"
-	"github.com/maxischmaxi/qsnap/internal/logging"
 	"github.com/maxischmaxi/qsnap/internal/tools"
-	"go.uber.org/zap"
 )
 
 type Instance struct {
@@ -66,14 +64,12 @@ func LaunchPool(root context.Context, n int, chromeArgs []string) (Instances, er
 					it.AllocCancel()
 				}
 			}
-			logging.L.Error("failed to launch browser instance", zap.Error(err))
 			return nil, err
 		}
 		inst.ID = i
 		instances = append(instances, inst)
 	}
 
-	logging.L.Info("launched browser instances", zap.Int("count", len(instances)))
 	return instances, nil
 }
 
@@ -117,7 +113,6 @@ func launchOne(root context.Context, chromeArgs []string) (*Instance, error) {
 	if err := chromedp.Run(ctx); err != nil {
 		cancel()
 		allocCancel()
-		logging.L.Error("failed to start browser", zap.Error(err))
 		return nil, err
 	}
 
@@ -156,6 +151,5 @@ func findChrome() (string, error) {
 			return c, nil
 		}
 	}
-	logging.L.Warn("chrome binary not found in standard paths, relying on system PATH")
 	return "", errors.New("chrome not found")
 }

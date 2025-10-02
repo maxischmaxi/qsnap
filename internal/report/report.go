@@ -3,9 +3,6 @@ package report
 import (
 	"encoding/json"
 	"os"
-
-	"github.com/maxischmaxi/qsnap/internal/logging"
-	"go.uber.org/zap"
 )
 
 type CaseResult struct {
@@ -44,9 +41,7 @@ func CountStatus(cases []CaseResult, status string) int {
 func Write(path string, r Report) error {
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
-		logging.L.Error("failed to marshal report", zap.Error(err))
 		return err
 	}
-	logging.L.Info("writing report", zap.String("path", path))
 	return os.WriteFile(path, b, 0o644)
 }

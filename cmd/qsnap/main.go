@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -13,18 +14,18 @@ import (
 	"github.com/maxischmaxi/qsnap/internal/browser"
 	"github.com/maxischmaxi/qsnap/internal/config"
 	"github.com/maxischmaxi/qsnap/internal/diff"
-	"github.com/maxischmaxi/qsnap/internal/logging"
 	"github.com/maxischmaxi/qsnap/internal/pool"
 	"github.com/maxischmaxi/qsnap/internal/report"
 	"github.com/maxischmaxi/qsnap/internal/snapshot"
 	"github.com/maxischmaxi/qsnap/internal/storybook"
 	"github.com/maxischmaxi/qsnap/internal/tools"
-	"github.com/maxischmaxi/qsnap/internal/ui"
 	"go.uber.org/zap"
 )
 
 func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+	fmt.Printf("num of cpu cores: %d\n", runtime.NumCPU())
+
 	var (
 		input       = flag.String("input", ".", "the storybook directory you want to run snapshot tests in")
 		concurrency = flag.Int("concurrency", 10, "number of concurrent screenshot tasks")
@@ -37,95 +38,46 @@ func main() {
 		sbForce     = flag.Bool("storybookForce", false, "force rebuild of storybook even if -storybookPort is set")
 		sbWaitSec   = flag.Int("storybookWaitSec", 60, "how many seconds to wait for storybook to become available")
 		sbHealth    = flag.String("sb-health-path", "/index.html", "the HTTP path to check for storybook health")
-		logFile     = flag.String("logFile", "", "if set, log to this file instead of stdout")
-		logLevel    = flag.String("logLevel", "error", "log level: debug, info, warn, error")
-		logJSON     = flag.Bool("logJSON", false, "if true, log in JSON format")
-		logConsole  = flag.Bool("logConsole", true, "if true, log to console")
-		logDev      = flag.Bool("logDev", false, "if true, use a more human friendly console log format")
 		chromeArgs  = flag.String("chromeArgs", "", "additional comma-separated arguments to pass to Chrome instances")
 		limit       = flag.Int("limit", 0, "if > 0, only process this many stories from the config files")
 	)
 
 	flag.Parse()
 
-	cleanupLogs, err := logging.Init(logging.Config{
-		Level:       *logLevel,
-		FilePath:    *logFile,
-		MaxSizeMB:   1000,
-		MaxBackups:  5,
-		MaxAgeDays:  14,
-		JSON:        *logJSON,
-		Console:     *logConsole,
-		Development: *logDev,
-	})
-	if err != nil {
-		logging.L.Fatal("failed to initialize logging", zap.Error(err))
-		os.Exit(1)
-	}
-	defer cleanupLogs()
-
-	logging.L.Info("qsnap started",
-		zap.String("input", *input),
-		zap.Int("concurrency", *concurrency),
-		zap.Int("instances", *instances),
-		zap.Int("timeoutSec", *timeoutSec),
-		zap.String("baseConfig", *baseConfig),
-		zap.Int("sbPort", *sbPort),
-		zap.String("sbBuildCmd", *sbBuildCmd),
-		zap.String("sbBuildDir", *sbBuildDir),
-		zap.Bool("sbForce", *sbForce),
-		zap.Int("sbWaitSec", *sbWaitSec),
-		zap.String("sbHealth", *sbHealth),
-		zap.String("logFile", *logFile),
-		zap.String("logLevel", *logLevel),
-		zap.Bool("logJSON", *logJSON),
-		zap.Bool("logConsole", *logConsole),
-		zap.Bool("logDev", *logDev),
-	)
-
 	chromeArgsList := []string{}
 	if *chromeArgs != "" {
 		chromeArgsList = strings.Split(*chromeArgs, ",")
 	}
 	if len(chromeArgsList) > 0 {
-		logging.L.Info("additional chrome arguments", zap.Strings("args", chromeArgsList))
+		fmt.Println("Using additional Chrome args:", chromeArgsList)
 	}
 
 	baseDir, err := tools.ExpandPath(*input)
 	if err != nil {
-		logging.L.Fatal("failed to expand input path", zap.String("input", *input), zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to expand input path", zap.String("input", *input), zap.Error(err))
 	}
 
 	cfg, err := config.NewOsnapBaseConfig(filepath.Join(baseDir, *baseConfig))
 	if err != nil {
-		logging.L.Fatal("failed to load base config", zap.String("file", *baseConfig), zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to load base config", zap.String("file", *baseConfig), zap.Error(err))
 	}
 
 	configs, err := cfg.FindAndParseConfigs(*input)
 	if err != nil {
-		logging.L.Fatal("failed to find/parse config files", zap.String("dir", *input), zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to find/parse config files", zap.String("input", *input), zap.Error(err))
 	}
 
 	err = os.MkdirAll(cfg.SnapshotDirectory, 0o755)
 	if err != nil {
-		logging.L.Fatal("failed to create snapshot directory", zap.String("dir", cfg.SnapshotDirectory), zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to create snapshot directory", zap.String("dir", cfg.SnapshotDirectory), zap.Error(err))
 	}
-
-	logging.L.Info("loaded base config", zap.String("file", *baseConfig), zap.Any("config", cfg))
 
 	rootCtx, rootCancel := context.WithCancel(context.Background())
 	defer rootCancel()
 
 	if err := storybook.BuildIfNeeded(rootCtx, *sbBuildCmd, filepath.Join(baseDir, *sbBuildDir), baseDir, *sbForce); err != nil {
-		logging.L.Fatal("failed to build storybook", zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to build storybook", zap.Error(err))
 	}
-
-	logging.L.Info("serving storybook", zap.Int("port", *sbPort), zap.String("dir", filepath.Join(baseDir, *sbBuildDir)))
 
 	ctrl, started, err := storybook.ServeBuildIfNeeded(
 		rootCtx,
@@ -136,8 +88,7 @@ func main() {
 		"",
 	)
 	if err != nil {
-		logging.L.Fatal("failed to serve storybook", zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to serve storybook", zap.Error(err))
 	}
 	defer func() {
 		if ctrl != nil {
@@ -146,17 +97,16 @@ func main() {
 	}()
 
 	if started {
-		logging.L.Info("storybook server started", zap.Int("port", *sbPort))
+		fmt.Println("started storybook server on port", *sbPort)
 	} else {
-		logging.L.Info("storybook server already running", zap.Int("port", *sbPort))
+		fmt.Println("using existing storybook server on port", *sbPort)
 	}
 
 	instancesClamped := max(*instances, 1)
 
 	brs, err := browser.LaunchPool(rootCtx, instancesClamped, chromeArgsList)
 	if err != nil {
-		logging.L.Fatal("failed to launch browser instances", zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to launch browser instances", zap.Error(err))
 	}
 	defer brs.CloseAll()
 
@@ -164,58 +114,40 @@ func main() {
 	results := make([]report.CaseResult, len(configs))
 	waitSelList := snapshot.ParseSelectors("#storybook-root, #root")
 
-	sendUI, stopUI := ui.Run(rootCtx, len(configs))
-	defer stopUI()
-
 	configsToProcess := configs
 	if *limit > 0 && *limit < len(configs) {
 		configsToProcess = configs[:*limit]
-		logging.L.Info("limiting number of stories to process", zap.Int("limit", *limit))
+		fmt.Println("limiting to first", *limit, "stories")
 	}
+
+	fmt.Println("Processing", len(configsToProcess), "stories")
 
 	for i, s := range configsToProcess {
 		i, s := i, s // capture loop variables
 
 		wp.Go(func() {
 			b := brs.Pick()
-			instID := b.ID
-
-			sendUI(ui.Event{
-				Type:     ui.EvtStart,
-				Name:     s.Name,
-				URL:      s.URL,
-				Instance: instID,
-			})
 
 			ctx, cancel := context.WithTimeout(rootCtx, time.Duration(*timeoutSec)*time.Second)
 			defer cancel()
 
 			filename := fmt.Sprintf("%s_%dx%d.png", s.Name, s.Width, s.Height)
 
-			pngPath := filepath.Join(baseDir, "..", "__image-snapshots__", "__diff__", filename)
+			diffPath := filepath.Join(baseDir, "..", "__image-snapshots__", "__diff__", filename)
 			baselinePath := filepath.Join(baseDir, "..", "__image-snapshots__", "__base_images__", filename)
 
 			url := fmt.Sprintf("http://127.0.0.1:%d%s", *sbPort, s.URL)
-			logging.L.Info("capturing snapshot", zap.String("name", s.Name), zap.String("url", url), zap.String("file", pngPath), zap.String("instance", fmt.Sprintf("%d", instID)), zap.Int("width", s.Width), zap.Int("height", s.Height))
 
-			_, err := snapshot.Capture(ctx, b, url, pngPath, s.Width, s.Height, waitSelList)
+			buf, err := snapshot.Capture(ctx, b, url, diffPath, s.Width, s.Height, waitSelList)
 			if err != nil {
 				results[i] = report.CaseResult{
 					Name:     s.Name,
 					URL:      s.URL,
 					Status:   "error",
 					Error:    err.Error(),
-					OutPath:  pngPath,
+					OutPath:  diffPath,
 					Baseline: baselinePath,
 				}
-				sendUI(ui.Event{
-					Type:     ui.EvtDone,
-					Name:     s.Name,
-					URL:      s.URL,
-					Instance: instID,
-					Status:   "error",
-					Error:    err.Error(),
-				})
 				return
 			}
 
@@ -224,24 +156,16 @@ func main() {
 				threshold = *s.Threshold
 			}
 
-			df, ph, err := diff.CompareFiles(baselinePath, pngPath, float64(threshold), 10)
+			df, ph, err := diff.CompareFiles(baselinePath, buf, diffPath, float64(threshold), 10)
 			if err != nil {
 				results[i] = report.CaseResult{
 					Name:     s.Name,
 					URL:      s.URL,
 					Status:   "error",
 					Error:    err.Error(),
-					OutPath:  pngPath,
+					OutPath:  diffPath,
 					Baseline: baselinePath,
 				}
-				sendUI(ui.Event{
-					Type:     ui.EvtDone,
-					Name:     s.Name,
-					URL:      s.URL,
-					Instance: instID,
-					Status:   "error",
-					Error:    err.Error(),
-				})
 				return
 			}
 
@@ -257,19 +181,14 @@ func main() {
 				URL:        s.URL,
 				Status:     status,
 				Error:      "",
-				OutPath:    pngPath,
+				OutPath:    diffPath,
 				Baseline:   baselinePath,
 				PixelDiff:  df,
 				PercepDiff: ph,
 			}
 
-			sendUI(ui.Event{
-				Type:     ui.EvtDone,
-				Name:     s.Name,
-				URL:      s.URL,
-				Instance: instID,
-				Status:   status,
-			})
+			snapshotNumber := fmt.Sprintf("[%d]", i+1)
+			fmt.Printf("%s %s - %s\n", snapshotNumber, s.Name, status)
 		})
 	}
 
@@ -288,8 +207,7 @@ func main() {
 	reportPath := filepath.Join(baseDir, "report.json")
 	err = report.Write(reportPath, rep)
 	if err != nil {
-		logging.L.Fatal("failed to write report", zap.String("file", reportPath), zap.Error(err))
-		os.Exit(1)
+		log.Fatal("failed to write report", zap.String("file", reportPath), zap.Error(err))
 	}
-	logging.L.Info("wrote report", zap.String("file", reportPath))
+	log.Println("wrote report to", reportPath)
 }

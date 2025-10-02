@@ -3,15 +3,11 @@ package snapshot
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/chromedp/chromedp"
 	"github.com/maxischmaxi/qsnap/internal/browser"
-	"github.com/maxischmaxi/qsnap/internal/logging"
-	"go.uber.org/zap"
 )
 
 func ParseSelectors(csv string) []string {
@@ -39,11 +35,6 @@ func waitAny(selectors []string, timeout time.Duration) chromedp.Action {
 				}
 			}
 			if time.Now().After(deadline) {
-				logging.L.Error(
-					"timeout waiting for any selector",
-					zap.Strings("selectors", selectors),
-					zap.Duration("timeout", timeout),
-				)
 				return errors.New("timeout waiting for any selector")
 			}
 			time.Sleep(50 * time.Millisecond)
@@ -52,16 +43,6 @@ func waitAny(selectors []string, timeout time.Duration) chromedp.Action {
 }
 
 func Capture(ctx context.Context, inst *browser.Instance, url, outPath string, vw, vh int, waitSelectors []string) ([]byte, error) {
-	logging.L.Info(
-		"capturing snapshot",
-		zap.String("url", url),
-		zap.String("file", outPath),
-		zap.Strings("waitSelectors", waitSelectors),
-		zap.Int("width", vw),
-		zap.Int("height", vh),
-		zap.String("instance", fmt.Sprintf("%d", inst.ID)),
-	)
-
 	tabCtx, cancel := chromedp.NewContext(inst.Ctx)
 	defer cancel()
 
@@ -76,26 +57,8 @@ func Capture(ctx context.Context, inst *browser.Instance, url, outPath string, v
 		chromedp.FullScreenshot(&buf, 100),
 	)
 	if err != nil {
-		logging.L.Error(
-			"failed to capture screenshot",
-			zap.String("url", url),
-			zap.String("file", outPath),
-			zap.Int("width", vw),
-			zap.Int("height", vh),
-			zap.String("instance", fmt.Sprintf("%d", inst.ID)),
-			zap.Error(err),
-		)
 		return nil, err
 	}
 
-	logging.L.Info(
-		"screenshot captured",
-		zap.String("url", url),
-		zap.String("file", outPath),
-		zap.Int("width", vw),
-		zap.Int("height", vh),
-		zap.Int("bytes", len(buf)),
-	)
-
-	return buf, os.WriteFile(outPath, buf, 0o644)
+	return buf, nil
 }

@@ -11,9 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/maxischmaxi/qsnap/internal/logging"
-	"go.uber.org/zap"
 )
 
 type Controller struct {
@@ -40,13 +37,6 @@ func (c *Controller) Stop() {
 // ---------- Build ----------
 
 func BuildIfNeeded(ctx context.Context, buildCmd, buildDir, workDir string, force bool) error {
-	logging.L.Info("storybook: BuildIfNeeded",
-		zap.String("buildCmd", buildCmd),
-		zap.String("buildDir", buildDir),
-		zap.String("workDir", workDir),
-		zap.Bool("force", force),
-	)
-
 	if !force {
 		if st, err := os.Stat(buildDir); err == nil && st.IsDir() {
 			return nil
@@ -55,7 +45,6 @@ func BuildIfNeeded(ctx context.Context, buildCmd, buildDir, workDir string, forc
 
 	bin, args := splitCmd(buildCmd)
 	if bin == "" {
-		logging.L.Error("storybook: build command empty")
 		return errors.New("storybook: build command empty")
 	}
 
@@ -67,21 +56,14 @@ func BuildIfNeeded(ctx context.Context, buildCmd, buildDir, workDir string, forc
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 
-	logging.L.Info("storybook: Running build command",
-		zap.String("cmd", buildCmd),
-		zap.String("workDir", cmd.Dir),
-	)
 	if err := cmd.Run(); err != nil {
-		logging.L.Error("storybook: build command failed", zap.Error(err))
 		return fmt.Errorf("storybook: build command failed: %w", err)
 	}
 
 	if st, err := os.Stat(buildDir); err != nil || !st.IsDir() {
-		logging.L.Error("storybook: buildDir not found after build", zap.String("buildDir", buildDir))
 		return fmt.Errorf("storybook: buildDir %q not found after build", buildDir)
 	}
 
-	logging.L.Info("storybook: Build OK", zap.String("buildDir", buildDir))
 	return nil
 }
 
@@ -102,24 +84,14 @@ func ServeBuildIfNeeded(
 	logFile string, // "" = silent
 ) (*Controller, bool, error) {
 	if IsPortOpen(port, 200*time.Millisecond) {
-		logging.L.Info("storybook: assuming already running", zap.Int("port", port))
 		return &Controller{started: false, port: port}, false, nil
 	}
 
-	logging.L.Info("storybook: starting static server",
-		zap.Int("port", port),
-		zap.String("dir", dir),
-		zap.String("healthPath", healthPath),
-		zap.Duration("wait", wait),
-		zap.String("logFile", logFile),
-	)
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		logging.L.Error("storybook: build dir missing", zap.String("dir", dir))
 		return nil, false, fmt.Errorf("storybook: build dir %q missing", dir)
 	}
 
 	mux := http.NewServeMux()
-	logging.L.Info("storybook: Serving static files", zap.String("dir", dir))
 	mux.Handle("/", withIndexFallback(dir))
 
 	srv := &http.Server{
@@ -133,7 +105,6 @@ func ServeBuildIfNeeded(
 		if logFile != "" {
 			f, _ := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 			defer f.Close()
-			logging.L.Info("storybook: logging to file", zap.String("file", logFile))
 			_ = srv.ListenAndServe()
 		} else {
 			_ = srv.ListenAndServe()
@@ -184,11 +155,6 @@ func IsPortOpen(port int, timeout time.Duration) bool {
 }
 
 func WaitHTTP(port int, path string, timeout time.Duration) bool {
-	logging.L.Info("storybook: WaitHTTP",
-		zap.Int("port", port),
-		zap.String("path", path),
-		zap.Duration("timeout", timeout),
-	)
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}
